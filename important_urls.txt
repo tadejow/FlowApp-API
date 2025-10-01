@@ -1,0 +1,4 @@
+Uploaded flowapp-api (4.97 sec)
+Deployed flowapp-api triggers (5.04 sec)
+  https://flowapp-api.maciej-tadej.workers.dev
+Current Version ID: 2bc6660a-145e-4db9-a742-e4a1b3a49dfb
