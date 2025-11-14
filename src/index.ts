@@ -21,7 +21,7 @@ export default {
 			if (request.method === 'GET') {
 				try {
 					const playerName = searchParams.get('playerName');
-					
+
 					// Zmiana: Unikalni gracze w top 10
 					const top10Stmt = env.DB.prepare(
 						`SELECT player_name, MIN(completion_time_ms) as best_time
@@ -36,14 +36,14 @@ export default {
 					if (playerName) {
 						const bestScoreStmt = env.DB.prepare(`SELECT MIN(completion_time_ms) as best_time FROM duck_race WHERE player_name = ?`).bind(playerName);
 						const bestScoreResult = await bestScoreStmt.first<{ best_time: number }>();
-						
+
 						if (bestScoreResult && bestScoreResult.best_time) {
 							const rankStmt = env.DB.prepare(`SELECT COUNT(*) + 1 as rank FROM (SELECT MIN(completion_time_ms) as time FROM duck_race GROUP BY player_name) WHERE time < ?`).bind(bestScoreResult.best_time);
 							const rankResult = await rankStmt.first<{ rank: number }>();
 							userRankResult = { rank: rankResult?.rank || 1, time: bestScoreResult.best_time };
 						}
 					}
-					
+
 					const responsePayload = { top10: top10Results.results, userRank: userRankResult };
 					return new Response(JSON.stringify(responsePayload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -51,16 +51,50 @@ export default {
 					return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
 				}
 			}
-			
+
 			// POST - Zapis wyniku Duck Race
 			if (request.method === 'POST') {
 				try {
 					const { player_name, completion_time_ms, language } = await request.json<{ player_name: string; completion_time_ms: number; language?: string; }>();
 					if (!player_name || typeof completion_time_ms !== 'number') return new Response('Invalid data', { status: 400, headers: corsHeaders });
-					
+
 					const stmt = env.DB.prepare('INSERT INTO duck_race (player_name, completion_time_ms, language) VALUES (?, ?, ?)');
 					await stmt.bind(player_name, completion_time_ms, language || null).run();
 					return new Response('Score added', { status: 201, headers: corsHeaders });
+				} catch (e: any) {
+					return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+				}
+			}
+		}
+
+		// --- Endpoint: River Guardian ---
+		if (pathname === '/api/river-guardian') {
+			if (request.method === 'POST') {
+				try {
+					const { player_name, score } = await request.json<{ player_name: string; score: number; }>();
+					if (!player_name || typeof score !== 'number') {
+						return new Response('Invalid data: player_name and score are required.', { status: 400, headers: corsHeaders });
+					}
+
+					// Sprawdź, czy gracz już istnieje
+					const existingScoreStmt = env.DB.prepare('SELECT score FROM river_guardian_scores WHERE player_name = ?').bind(player_name);
+					const existingScoreResult = await existingScoreStmt.first<{ score: number }>();
+
+					if (existingScoreResult) {
+						// Gracz istnieje, zaktualizuj wynik tylko jeśli nowy jest wyższy
+						if (score > existingScoreResult.score) {
+							const stmt = env.DB.prepare('UPDATE river_guardian_scores SET score = ?, last_updated = CURRENT_TIMESTAMP WHERE player_name = ?');
+							await stmt.bind(score, player_name).run();
+							return new Response('Score updated', { status: 200, headers: corsHeaders });
+						} else {
+							return new Response('Score not updated, new score is not higher', { status: 200, headers: corsHeaders });
+						}
+					} else {
+						// Nowy gracz, wstaw nowy rekord
+						const stmt = env.DB.prepare('INSERT INTO river_guardian_scores (player_name, score) VALUES (?, ?)');
+						await stmt.bind(player_name, score).run();
+						return new Response('Score added', { status: 201, headers: corsHeaders });
+					}
 				} catch (e: any) {
 					return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
 				}
@@ -123,7 +157,7 @@ export default {
 					}
 
 					const stmt = env.DB.prepare(
-						`INSERT INTO reynolds_challenge (player_name, completion_time_ms, peak_velocity, flow_ratio_avg, flow_ratio_3, flow_ratio_4, flow_ratio_5, language) 
+						`INSERT INTO reynolds_challenge (player_name, completion_time_ms, peak_velocity, flow_ratio_avg, flow_ratio_3, flow_ratio_4, flow_ratio_5, language)
 						 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 					);
 					await stmt.bind(
