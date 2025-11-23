@@ -67,6 +67,78 @@ export default {
 			}
 		}
 
+		// --- Endpoint: Vortex Game ---
+		if (pathname === '/api/vortex-game') {
+		  // GET - Top 10 i pozycja użytkownika (unikalni gracze po najlepszym czasie)
+		  if (request.method === 'GET') {
+		    try {
+		      const playerName = searchParams.get('playerName');
+		
+		      const top10Stmt = env.DB.prepare(
+		        `SELECT player_name, MIN(completion_time_ms) as best_time
+		         FROM vortex_game
+		         GROUP BY player_name
+		         ORDER BY best_time ASC
+		         LIMIT 10`
+		      );
+		      const top10Results = await top10Stmt.all();
+		
+		      let userRankResult = null;
+		      if (playerName) {
+		        const bestScoreStmt = env.DB.prepare(
+		          `SELECT MIN(completion_time_ms) as best_time
+		           FROM vortex_game
+		           WHERE player_name = ?`
+		        ).bind(playerName);
+		        const bestScoreResult = await bestScoreStmt.first<{ best_time: number }>();
+		
+		        if (bestScoreResult && bestScoreResult.best_time) {
+		          const rankStmt = env.DB.prepare(
+		            `SELECT COUNT(*) + 1 as rank
+		             FROM (SELECT MIN(completion_time_ms) as time
+		                   FROM vortex_game
+		                   GROUP BY player_name)
+		             WHERE time < ?`
+		          ).bind(bestScoreResult.best_time);
+		          const rankResult = await rankStmt.first<{ rank: number }>();
+		          userRankResult = { rank: rankResult?.rank || 1, time: bestScoreResult.best_time };
+		        }
+		      }
+		
+		      const responsePayload = { top10: top10Results.results, userRank: userRankResult };
+		      return new Response(JSON.stringify(responsePayload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+		
+		    } catch (e: any) {
+		      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+		    }
+		  }
+		
+		  // POST - zapis wyniku
+		  if (request.method === 'POST') {
+		    try {
+		      const { player_name, completion_time_ms, language } = await request.json<{
+		        player_name: string;
+		        completion_time_ms: number;
+		        language?: string;
+		      }>();
+		
+		      if (!player_name || typeof completion_time_ms !== 'number') {
+		        return new Response('Invalid data', { status: 400, headers: corsHeaders });
+		      }
+		
+		      const stmt = env.DB.prepare(
+		        'INSERT INTO vortex_game (player_name, completion_time_ms, language) VALUES (?, ?, ?)'
+		      );
+		      await stmt.bind(player_name, completion_time_ms, language || null).run();
+		
+		      return new Response('Score added', { status: 201, headers: corsHeaders });
+		    } catch (e: any) {
+		      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+		    }
+		  }
+		}
+
+
 		// --- Endpoint: River Guardian ---
 		if (pathname === '/api/river-guardian') {
 			if (request.method === 'POST') {
